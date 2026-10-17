@@ -1,10 +1,11 @@
-# 在云端构建 CodeBuddy 镜像，导出 tar.gz 供离线导入
+# 在云端构建 CodeBuddy 镜像，双路产出：
+#   ① 推到 ghcr.io —— NAS 上 docker compose up 就能直接拉，不用手动导入
+#   ② 导出 tar.gz 发到 Release —— NAS 完全没外网时的兜底
 #
-# 为什么走这条路：NAS 连不上 Docker Hub（各类国内加速源也大面积失效），
-# 但 GitHub 的 runner 在境外、直连毫无障碍。让它在云端构建好、打成 tar.gz，
-# 下载后到 NAS 上 docker load，NAS 全程不用联网拉镜像。
+# 为什么走这条路：NAS 连不上 Docker Hub（国内各类加速源也大面积失效），
+# 但 GitHub 的 runner 在境外、直连毫无障碍。
 
-name: Build CodeBuddy image → tar.gz
+name: Build CodeBuddy image
 
 on:
   workflow_dispatch:
@@ -19,7 +20,11 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # 创建 Release 需要
+      contents: write   # 创建 Release
+      packages: write   # 推送 ghcr.io
+
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
 
     steps:
       - name: Checkout
@@ -35,7 +40,25 @@ jobs:
           docker images codebuddy-serve
           docker run --rm codebuddy-serve:latest codebuddy --version
 
-      - name: 导出 tar.gz
+      - name: 登录 ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 推送到 ghcr.io
+        run: |
+          set -eux
+          IMG="${IMAGE,,}"          # ghcr 路径必须全小写
+          SHORT="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          docker tag codebuddy-serve:latest "${IMG}:latest"
+          docker tag codebuddy-serve:latest "${IMG}:${SHORT}"
+          docker push "${IMG}:latest"
+          docker push "${IMG}:${SHORT}"
+          echo "已推送 ${IMG}:latest"
+
+      - name: 导出 tar.gz（离线兜底）
         run: |
           set -eux
           docker save codebuddy-serve:latest | gzip -1 > codebuddy-serve-amd64.tar.gz
@@ -53,7 +76,7 @@ jobs:
           retention-days: 7
           compression-level: 0
 
-      - name: 发布到 Release（长期可下载）
+      - name: 发布到 Release（离线兜底，长期可下载）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -67,11 +90,25 @@ jobs:
 
       - name: 汇总
         run: |
-          echo "### 下载地址" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "${{ github.server_url }}/${{ github.repository }}/releases/download/image-latest/codebuddy-serve-amd64.tar.gz" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 校验" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat codebuddy-serve-amd64.tar.gz.sha256 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          set -eux
+          IMG="${IMAGE,,}"
+          {
+            echo "## 直接拉取（推荐）"
+            echo ""
+            echo '```yaml'
+            echo "image: ${IMG}:latest"
+            echo '```'
+            echo ""
+            echo '```bash'
+            echo "docker pull ${IMG}:latest"
+            echo '```'
+            echo ""
+            echo "## 离线导入（NAS 无外网时）"
+            echo ""
+            echo "${{ github.server_url }}/${{ github.repository }}/releases/download/image-latest/codebuddy-serve-amd64.tar.gz"
+            echo ""
+            echo "sha256:"
+            echo '```'
+            cat codebuddy-serve-amd64.tar.gz.sha256
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
