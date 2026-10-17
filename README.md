@@ -49,10 +49,19 @@ docker compose up -d
 docker compose pull && docker compose up -d
 ```
 
-> ⚠️ 前提：这个包必须是 **public**。
-> 若 `docker pull` 报 `unauthorized`，去
-> `https://github.com/users/liumeixin/packages/container/package/codebuddy-serve/settings`
-> 把可见性改成 Public（GitHub 没有 API 能改 container 包的可见性，只能网页点）。
+> ⚠️ 前提：这个包必须是 **public**（GitHub 新建的 container 包默认 private，且
+> **可见性不会继承仓库**，即使仓库已公开包仍是私有的）。
+>
+> 若 `docker pull` 报 `unauthorized`，登录 GitHub 后打开：
+> `https://github.com/users/liumeixin/packages/container/codebuddy-serve/settings`
+> → 页面底部 **Danger Zone** → **Change visibility** → 选 **Public** → 输入包名
+> `codebuddy-serve` → 确认。
+>
+> 注意两点：
+> 1. 设置页路径**不带** `/package/` 段（带 `package/` 的是包首页，后面接 `/settings` 会 404）。
+> 2. 包还是私有时，未登录访问这个链接也是 404 —— 必须先登录 liumeixin 账号。
+>
+> GitHub 的 REST API **没有**修改 container 包可见性的端点（对已公开的包 PATCH 同样返回 404），只能网页操作。
 
 ---
 
