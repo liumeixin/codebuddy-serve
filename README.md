@@ -1,61 +1,23 @@
 # codebuddy-serve
 
-在 GitHub Actions 上构建 **CodeBuddy Code** 容器镜像（`--serve` 形态），导出成 `tar.gz` 供离线导入。
+在 GitHub Actions 上构建 **CodeBuddy Code** 容器镜像（`--serve` 形态），产出两条路：
+
+| 方式 | 怎么用 |
+|---|---|
+| **① 直接拉镜像**（推荐） | `image: ghcr.io/liumeixin/codebuddy-serve:latest` |
+| ② 离线导入 | 下载 Release 里的 `tar.gz` → `docker load` |
 
 **为什么存在这个仓库**：目标 NAS 连不上 Docker Hub（国内各类加速源也大面积失效），
-但 GitHub 的 runner 在境外、直连没有问题。于是把构建搬到云端，产物打成 tar 让 NAS 直接 `docker load`。
+但 GitHub 的 runner 在境外、直连没有问题。于是把构建搬到云端。
 
 ---
 
-## 产物
-
-每次构建会产出两个东西：
-
-| 位置 | 说明 |
-|---|---|
-| **Release `image-latest`** | 长期可下载，每次构建覆盖 |
-| Artifact `codebuddy-serve-amd64` | 保留 7 天 |
-
-下载地址（固定不变）：
-
-```
-https://github.com/liumeixin/codebuddy-serve/releases/download/image-latest/codebuddy-serve-amd64.tar.gz
-```
-
-## 怎么用
-
-### 1. 下载
-
-浏览器打开上面那个地址，或者用命令行：
-
-```bash
-curl -L -o codebuddy-serve-amd64.tar.gz \
-  https://github.com/liumeixin/codebuddy-serve/releases/download/image-latest/codebuddy-serve-amd64.tar.gz
-```
-
-> 仓库是 private 的话，浏览器要先登录；命令行要加 token：
-> `-H "Authorization: token <你的 PAT>"`
-
-### 2. 传到 NAS 并导入
-
-把 tar.gz 放到 NAS 能访问的位置，然后：
-
-```bash
-docker load -i codebuddy-serve-amd64.tar.gz
-docker images | grep codebuddy-serve
-# 应该看到 codebuddy-serve  latest  <id>  ...
-```
-
-> 绿联 UGOS 的 Docker 管理界面也有「导入镜像」功能，可以直接选文件。
-
-### 3. 起容器
-
-NAS 上只需要 `image:`，**不需要 `build:`**：
+## ① 直接拉镜像（推荐）
 
 ```yaml
 services:
   codebuddy:
-    image: codebuddy-serve:latest
+    image: ghcr.io/liumeixin/codebuddy-serve:latest
     container_name: codebuddy
     restart: unless-stopped
     stdin_open: true
@@ -81,7 +43,37 @@ mkdir -p workspace data/config data/auth
 docker compose up -d
 ```
 
-### 4. 登录 + 取密码
+更新镜像：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+> ⚠️ 前提：这个包必须是 **public**。
+> 若 `docker pull` 报 `unauthorized`，去
+> `https://github.com/users/liumeixin/packages/container/package/codebuddy-serve/settings`
+> 把可见性改成 Public（GitHub 没有 API 能改 container 包的可见性，只能网页点）。
+
+---
+
+## ② 离线导入
+
+固定下载地址：
+
+```
+https://github.com/liumeixin/codebuddy-serve/releases/download/image-latest/codebuddy-serve-amd64.tar.gz
+```
+
+```bash
+curl -L -O https://github.com/liumeixin/codebuddy-serve/releases/download/image-latest/codebuddy-serve-amd64.tar.gz
+docker load -i codebuddy-serve-amd64.tar.gz
+```
+
+NAS 上把 compose 改成只有 `image:`、没有 `build:`，并加 `pull_policy: never`。
+
+---
+
+## 登录 + 取密码（两种方式通用）
 
 ```bash
 # 扫码登录（终端会打印一个外部登录地址，用电脑浏览器打开）
@@ -119,7 +111,7 @@ Swagger：`http://<NAS_IP>:8095/api/docs`
 
 ## 手动触发构建
 
-Actions 页面 → `Build CodeBuddy image → tar.gz` → `Run workflow`。
+Actions 页面 → `Build CodeBuddy image` → `Run workflow`。
 
 想升级 CodeBuddy 版本，重跑一次即可（`latest` 会拉到当时最新）。
 
